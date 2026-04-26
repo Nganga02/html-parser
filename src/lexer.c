@@ -95,7 +95,7 @@ struct Token *emit_token(char *buf, int *i, struct Lexer *lexer, token_type type
         new_token->type = type;
         new_token->name = token_name;
         token_name = NULL; /*Making sure the pointer does not point to our data so we can destroy it*/
-        new_token->has_attr = has_attr;
+        new_token->flags.has_attr = has_attr;
 
         if (has_attr)
         {
@@ -130,14 +130,12 @@ static void consume_n_characters(char *str, int *index, int n)
     *index += n;
 }
 
-
-
 /**
  * Main function that is responsible for lexical analysis
- * 
+ *
  * Takes in as arguments:
  *  @param char* str_stream which is the string containing the html format
- *  @param int This is the length of string 
+ *  @param int This is the length of string
  *  @param struct Lexer* which is a instance of a lexer.
  */
 void lexer_parse(char *str_stream, int str_len, struct Lexer *lexer)
@@ -209,15 +207,15 @@ void lexer_parse(char *str_stream, int str_len, struct Lexer *lexer)
 
 /**
  * This is an ancillary function that performs analysis on the DOCTYPE tag
- * 
- * It is triggered when the lexer state changes form markup declaration open to 
+ *
+ * It is triggered when the lexer state changes form markup declaration open to
  * It outputs tokens based on the state of the lexer since this tag does not have
  * the same syntax as othet tags
  */
 
 static void process_doctype(char *stream, int stream_len, int *index, struct Lexer *lexer, char *c, struct String *buf)
 {
-
+    __uint8_t count = 0;
     while (peek(stream, *index, JUMP, stream_len))
     {
 
@@ -225,19 +223,100 @@ static void process_doctype(char *stream, int stream_len, int *index, struct Lex
 
         if (*c == GREATERTHAN)
         {
-            if(lexer->state == bef_doctype_PI || lexer->state == bef_doctype_SI)
-            flush_buffer(buf);
+            switch (lexer->state)
+            {
+            case doctype_name:
+            case aft_doctype_name:
+            case aft_doctype_PI:
+            case aft_doctype_SI:
+                flush_buffer(buf);
+                break;
+            case bef_doctype_PI:
+            case doc_PI_dq:
+            case doc_PI_sq:
+            case bef_doctype_SI:
+            case doc_SI_dq:
+            case doc_SI_sq:
+                flush_buffer(buf);
+            case bef_doctype_name:
+                /// TODO: Generate a token with a force_quirks flag set.
+                break;
+            default:
+                break;
+            }
             lexer->state = data;
             break;
         }
-        if(*c ==  QUOTES)
+        if (*c == QUOTES)
         {
-            if(lexer->state == bef_doctype_PI || lexer->state == bef_doctype_SI)
+
+            switch (lexer->state)
             {
-                lexer->state = lexer->state == bef_doctype_PI ? doc_PI_dq : doc_SI_dq;
-            }else if(lexer->state == doc_PI_dq || lexer->state == doc_PI_dq)
-            {
+            case bef_doctype_PI:
+                lexer->state = doc_PI_dq;
+                break;
+            case doc_PI_dq:
                 flush_buffer(buf);
+                lexer->state = aft_doctype_PI;
+                break;
+            case doc_PI_sq:
+                goto append_input;
+            case aft_doctype_PI:
+                lexer->state = doc_SI_dq;
+                break;
+            case bef_doctype_SI:
+                lexer->state = doc_PI_dq;
+                break;
+            case doc_SI_dq:
+                flush_buffer(buf);
+                lexer->state = aft_doctype_SI;
+                break;
+            case doc_SI_sq:
+                goto append_input;
+            case aft_doctype_SI:
+                /// TODO: set the force quirk's flag to true
+                fprintf(stderr, "setting the force quirks flag on\n");
+                break;
+            default:
+                goto append_input;
+                break;
+            }
+            continue;
+        }
+
+        if (*c == SINGLEQUOTES)
+        {
+
+            switch (lexer->state)
+            {
+            case bef_doctype_PI:
+                lexer->state = doc_PI_sq;
+                break;
+            case doc_PI_sq:
+                flush_buffer(buf);
+                lexer->state = aft_doctype_PI;
+                break;
+            case doc_PI_dq:
+                goto append_input;
+            case aft_doctype_PI:
+                lexer->state = doc_SI_sq;
+                break;
+            case bef_doctype_SI:
+                lexer->state = doc_PI_sq;
+                break;
+            case doc_SI_sq:
+                flush_buffer(buf);
+                lexer->state = aft_doctype_SI;
+                break;
+            case doc_SI_dq:
+                goto append_input;
+            case aft_doctype_SI:
+                /// TODO: set the force quirk's flag to true
+                fprintf(stderr, "setting the force quirks flag on\n");
+                break;
+            default:
+                goto append_input;
+                break;
             }
             continue;
         }
@@ -246,37 +325,61 @@ static void process_doctype(char *stream, int stream_len, int *index, struct Lex
         {
 
             /* Making sure the buffer is not empty */
-            if (buf->length > 0)
+            switch (lexer->state)
             {
-                if (lexer->state == markup_dec_open && (strcmp(buf->value, "doctype")) == 0)
+            case doctype:
+                if ((strcmp(buf->value, "doctype")) == 0)
                 {
                     flush_buffer(buf);
                     lexer->state = bef_doctype_name;
-                }else if(lexer->state == bef_doctype_name)
-                {
-                    flush_buffer(buf);
-                    lexer->state = aft_doctype_name;
-                }else if(lexer->state == bef_doctype_PI)
-                {
-                    if((strcmp(buf->value, "public")) == 0)
-                    {
-                        flush_buffer(buf);
-                        lexer->state = bef_doctype_PI;
-
-                    }else if((strcmp(buf->value, "system")) == 0)
-                    {
-                        flush_buffer(buf);
-                        lexer->state = bef_doctype_SI;
-                    }
                 }
+                break;
+            case doctype_name:
+                flush_buffer(buf);
+                lexer->state = aft_doctype_name;
+                break;
+            case doc_PI_dq:
+            case doc_PI_sq:
+            case doc_SI_dq:
+            case doc_SI_sq:
+                goto append_input;
+            default:
+                break;
             }
             continue;
         }
 
-        /*The lexer only hits this point if it is a character*/
-        if ((*c > 0x40) && (*c < 0x5b))
-            *c += 0x20;
+    /*The lexer only hits this point if it is a character*/
+    append_input:
+        if (lexer->state != doc_PI_dq && lexer->state != doc_PI_sq && lexer->state != doc_SI_dq && lexer->state != doc_SI_sq)
+            if ((*c > 0x40) && (*c < 0x5b))
+                *c += 0x20;
         append(buf, c, 1);
+        switch (lexer->state)
+        {
+        case bef_doctype_name:
+            lexer->state = doctype_name;
+            break;
+        case aft_doctype_name:
+            count++;
+            if (count == 6)
+            {
+                if ((strcmp(buf->value, "public")) == 0)
+                {
+                    flush_buffer(buf);
+                    count = 0;
+                    lexer->state = bef_doctype_PI;
+                }
+                else if ((strcmp(buf->value, "system")) == 0)
+                {
+                    flush_buffer(buf);
+                    count = 0;
+                    lexer->state = bef_doctype_SI;
+                }
+            }
+
+            break;
+        }
     }
 }
 
