@@ -30,6 +30,7 @@ struct Token
     struct String *name;
     struct Attributes *attributes; // This field can be null
     token_type type;
+    bool is_self_closing;
     union Flags{
         bool force_quirks;
         bool has_attr;
@@ -66,14 +67,17 @@ enum LexerState
 
     /* Tracks the state of start/self-closing tag */
     tag,
+    open_tag,
+    tag_name,
     self_closing_start_tag,
     bef_attr_name,
-    attr_name_state,
+    attr_name,
     aft_attr_name,
     bef_attr_value,
     attr_value_dq,
     attr_value_unq,
     attr_value_sq,
+    aft_attr_quoted,
     char_ref_attr_val,
 
     /*Tracks comments in the file*/

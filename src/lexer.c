@@ -110,6 +110,10 @@ struct Token *emit_token(char *buf, int *i, struct Lexer *lexer, token_type type
     }
 }
 
+/**
+ * Helper function to update tokens.
+ */
+
 // Function to determine if a character c exist after n steps
 static int check_character(char *str, int index, int jumps, int length, char c)
 {
@@ -181,6 +185,7 @@ void lexer_parse(char *str_stream, int str_len, struct Lexer *lexer)
             {
                 // processing start tag
                 index -= 1;
+                lexer->state = tag;
                 process_start_tag(str_stream, str_len, &index, lexer, &c, buf);
             }
             else if (c = FOWARDSLASH)
@@ -403,30 +408,191 @@ static void process_comment(char *stream, int stream_len, int *index, struct Lex
 // Called when we encounter an alphanumeric characters after < open tag
 static void process_start_tag(char *stream, int stream_len, int *index, struct Lexer *lexer, char *c, struct String *buf)
 {
+    bool from_double = false;
 
     while (peek(stream, *index, JUMP, stream_len))
     {
         *c = consume(stream, index);
         if (*c == GREATERTHAN)
         {
-            flush_buffer(buf);
+            switch (lexer->state)
+            {
+            case tag_name:
+            case attr_name:
+            case attr_value_unq:
+            case char_ref_attr_val:
+                /// TODO: update the tag/attribute names.
+            case bef_attr_name:
+            case aft_attr_name:
+            case bef_attr_value:
+                flush_buffer(buf);
+                lexer->state = data;
+                break;
+            case attr_value_dq:
+            case attr_value_sq:
+                goto append_values;
+            default:
+                break;
+            }
+            lexer->state = data;
             break;
         }
 
-        if (*c == FOWARDSLASH && check_character(stream, *index, 0, stream_len, GREATERTHAN)) // At this point we are processing the self closing tag
+        if (*c == FOWARDSLASH) // At this point we are processing the self closing tag
         {
+            switch (lexer->state)
+            {
+            case tag_name:
+            case attr_name:
+            case attr_value_unq:
+            case char_ref_attr_val:
+                /// TODO: update the tag/attribute names.
+            case bef_attr_name:
+            case aft_attr_name:
+            case bef_attr_value:
+                lexer->state = self_closing_start_tag;
+                break;
+            case attr_value_dq:
+            case attr_value_sq:
+                goto append_values;
+            default:
+                break;
+            }
             lexer->state = self_closing_start_tag;
             continue;
         }
-
-        if (isspace(*c) && buf->length > 0)
+        if (*c == AMPERSAND)
         {
-            flush_buffer(buf);
+            switch (lexer->state)
+            {
+            case bef_attr_name:
+            case aft_attr_name:
+                lexer->state = attr_name;
+            case tag_name:
+            case attr_name:
+                goto append_values;
+            case bef_attr_value:
+                lexer->state = attr_value_unq;
+                goto append_values;
+            case attr_value_dq:
+                from_double = true;
+            case attr_value_sq:
+                lexer->state = char_ref_attr_val;
+                goto append_values;
+            case self_closing_start_tag:
+                lexer->state = attr_name;
+                goto append_values;
+            }
+        }
+
+        if (*c == QUOTES || *c == SINGLEQUOTES)
+        {
+            switch (lexer->state)
+            {
+            case tag_name:
+                goto append_values;
+            case bef_attr_value:
+                lexer->state = *c == QUOTES ? attr_value_dq : attr_value_sq;
+                break;
+            case attr_value_dq:
+                if (*c == QUOTES)
+                {
+                    /// TODO:Update token value
+                    flush_buffer(buf);
+                    lexer->state = aft_attr_quoted;
+                    break;
+                }
+                else
+                {
+                    goto append_values;
+                }
+            case attr_value_sq:
+                if (*c == SINGLEQUOTES)
+                {
+                    /// TODO:Update token value
+                    flush_buffer(buf);
+                    lexer->state = aft_attr_quoted;
+                    break;
+                }
+                else
+                {
+                    goto append_values;
+                }
+            default:
+                break;
+            }
             continue;
         }
-        if (!isspace(*c))
+
+        if (*c == EQUAL)
         {
-            append(buf, c, 1);
+            switch (lexer->state)
+            {
+            case tag_name:
+                goto append_values;
+            case attr_name:
+                /// TODO: Update the token name
+                flush_buffer(buf);
+            case aft_attr_name:
+                lexer->state = bef_attr_value;
+                break;
+            case attr_value_dq:
+            case attr_value_sq:
+                goto append_values;
+            default:
+                break;
+            }
+            continue;
+        }
+        if (isspace((unsigned char)*c))
+        {
+            switch (lexer->state)
+            {
+            case tag_name: // we should flush the buffer
+                flush_buffer(buf);
+                lexer->state = bef_attr_name;
+                break;
+            case attr_name:
+                flush_buffer(buf);
+                lexer->state = aft_attr_name;
+                break;
+            case attr_value_unq:
+                flush_buffer(buf);
+                lexer->state = bef_attr_name;
+                break;
+            case self_closing_start_tag:
+                flush_buffer(buf);
+                lexer->state = bef_attr_name;
+                break;
+            case attr_value_dq:
+            case attr_value_sq:
+                goto append_values;
+            case char_ref_attr_val:
+                lexer->state = from_double ? attr_value_dq : attr_value_sq;
+                goto append_values;
+            default:
+                break;
+            }
+            continue;
+        }
+
+    append_values:
+        if (lexer->state != attr_value_dq && lexer->state != attr_value_sq)
+        {
+            if ((*c > 0x40) && (*c < 0x5b))
+                *c += 0x20;
+        }
+        append(buf, c, 1);
+        switch (lexer->state)
+        {
+        case bef_attr_name:
+            lexer->state = attr_name;
+            break;
+        case tag:
+            lexer->state = tag_name;
+            break;
+        default:
+            break;
         }
     }
 }
