@@ -1,5 +1,6 @@
 #include "lexer.h"
 #include "utils.h"
+#include "lex.h"
 
 
 // Dynamic string DS
@@ -47,10 +48,14 @@ int main(int argc, char *argv[])
 
     // Initialization
     struct Lexer Lx = {
-        .state = data,
+        .state = DATA,
     };
 
     lexer_parse(read_string->value, read_string->length, &Lx);
+
+
+    free_lexemes(&Lx);
+    
 
     free_string(read_string);
     return 0;

@@ -13,7 +13,7 @@ struct String *str_create(void)
     if (!s)
         return NULL;
 
-    s->value = malloc(INITLENGTH);
+    s->value = calloc(INITLENGTH, sizeof(char));
     if (!s->value)
     {
         free(s);
@@ -100,4 +100,25 @@ struct String *read_file(char *filename)
         }
     }
     return src_code;
+}
+
+
+
+void flush_buffer(struct String *buf)
+{
+    if (buf->length > 0)
+    {
+        memset(buf->value, 0, buf->capacity * sizeof(char));
+        if (buf->capacity > INITLENGTH)
+        {
+            char *tmp = realloc(buf->value, INITLENGTH * sizeof(char));
+
+            if (tmp)
+            {
+                buf->value = tmp;
+                buf->capacity = INITLENGTH;
+            }
+        }
+        buf->length = 0;
+    }
 }

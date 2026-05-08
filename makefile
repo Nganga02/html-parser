@@ -9,8 +9,8 @@ INFO_BIN  := $(BIN)/ilexer
 PROD_BIN  := $(BIN)/lexer
 
 OBJECTS := \
-	$(OBJ)/tokens.o \
 	$(OBJ)/lexer.o \
+	$(OBJ)/lex.o \
 	$(OBJ)/utils.o
 
 
@@ -36,7 +36,7 @@ $(PROD_BIN): $(OBJECTS) $(SRC)/main.c
 
 $(OBJ)/%.o: $(SRC)/%.c
 	@mkdir -p $(OBJ)
-	$(CC) -c -g -DINFO -Iinclude $< -o $@
+	$(CC) -c -g -DDEBUG -Iinclude $< -o $@
 
 
 clean:

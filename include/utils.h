@@ -41,6 +41,7 @@ struct String
 
 struct String *read_file(char *filename);
 struct String *str_create(void);
+void flush_buffer(struct String *buf);
 int append(struct String *instance, char *buf, int read_size);
 void free_string(struct String *str);
 
